@@ -1,0 +1,309 @@
+-- =========================
+-- MySQL Database Schema
+-- Converted from PostgreSQL
+-- =========================
+
+-- =========================
+-- STATIONS
+-- =========================
+CREATE TABLE stations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  address TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_stations_name ON stations(name);
+
+-- =========================
+-- USERS
+-- =========================
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  employee_id VARCHAR(255) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  role ENUM('SM', 'AM', 'Admin') NOT NULL,
+  station_id INT,
+  area_manager_id INT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE SET NULL,
+  FOREIGN KEY (area_manager_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_users_employee_id ON users(employee_id);
+CREATE INDEX idx_users_role ON users(role);
+CREATE INDEX idx_users_station_id ON users(station_id);
+CREATE INDEX idx_users_area_manager_id ON users(area_manager_id);
+
+-- =========================
+-- TANKS
+-- =========================
+CREATE TABLE tanks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  station_id INT NOT NULL,
+  fuel_type ENUM('91_GASOLINE', '95_GASOLINE', 'DIESEL') NOT NULL,
+  capacity DOUBLE,
+  current_level DOUBLE DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_tanks_station_id ON tanks(station_id);
+
+-- =========================
+-- NOZZLES
+-- =========================
+CREATE TABLE nozzles (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL UNIQUE,
+  station_id INT NOT NULL,
+  tank_id INT NOT NULL,
+  fuel_type ENUM('91_GASOLINE', '95_GASOLINE', 'DIESEL') NOT NULL,
+  meter_limit DECIMAL(12, 2) DEFAULT 999999,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE CASCADE,
+  FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_nozzles_station_id ON nozzles(station_id);
+CREATE INDEX idx_nozzles_tank_id ON nozzles(tank_id);
+CREATE INDEX idx_nozzles_name ON nozzles(name);
+
+-- =========================
+-- SHIFTS
+-- =========================
+CREATE TABLE shifts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  station_id INT NOT NULL,
+  shift_type ENUM('DAY', 'NIGHT') NOT NULL,
+  start_time DATETIME NOT NULL,
+  end_time DATETIME,
+  status ENUM('OPEN', 'CLOSED', 'LOCKED') DEFAULT 'OPEN',
+  locked BOOLEAN DEFAULT FALSE,
+  locked_by VARCHAR(255),
+  locked_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_shifts_station_id ON shifts(station_id);
+CREATE INDEX idx_shifts_status ON shifts(status);
+CREATE INDEX idx_shifts_start_time ON shifts(start_time);
+
+-- =========================
+-- NOZZLE READINGS
+-- =========================
+CREATE TABLE nozzle_readings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  shift_id INT NOT NULL,
+  nozzle_id INT NOT NULL,
+  opening_reading DOUBLE NOT NULL,
+  closing_reading DOUBLE,
+  consumption DOUBLE,
+  is_rollover BOOLEAN DEFAULT FALSE,
+  price_per_liter DECIMAL(10, 2),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_shift_nozzle (shift_id, nozzle_id),
+  FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE CASCADE,
+  FOREIGN KEY (nozzle_id) REFERENCES nozzles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_nozzle_readings_shift_id ON nozzle_readings(shift_id);
+CREATE INDEX idx_nozzle_readings_nozzle_id ON nozzle_readings(nozzle_id);
+
+-- =========================
+-- CASH TRANSACTIONS
+-- =========================
+CREATE TABLE cash_transactions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  shift_id INT NOT NULL UNIQUE,
+  station_id INT NOT NULL,
+  liters_sold DOUBLE NOT NULL,
+  rate_per_liter DOUBLE NOT NULL,
+  total_revenue DOUBLE NOT NULL,
+  card_payments DOUBLE DEFAULT 0,
+  cash_on_hand DOUBLE NOT NULL,
+  bank_deposit DOUBLE DEFAULT 0,
+  cash_to_am DOUBLE NOT NULL,
+  status ENUM('PENDING_ACCEPTANCE', 'WITH_AM', 'DEPOSITED') DEFAULT 'PENDING_ACCEPTANCE',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE CASCADE,
+  FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_cash_transactions_station_id ON cash_transactions(station_id);
+CREATE INDEX idx_cash_transactions_status ON cash_transactions(status);
+CREATE INDEX idx_cash_transactions_created_at ON cash_transactions(created_at);
+
+-- =========================
+-- CASH TRANSFERS
+-- =========================
+CREATE TABLE cash_transfers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  cash_transaction_id INT NOT NULL UNIQUE,
+  from_user_id INT NOT NULL,
+  to_user_id INT NOT NULL,
+  status ENUM('PENDING_ACCEPTANCE', 'WITH_AM', 'DEPOSITED') DEFAULT 'PENDING_ACCEPTANCE',
+  receipt_url TEXT,
+  deposited_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (cash_transaction_id) REFERENCES cash_transactions(id) ON DELETE CASCADE,
+  FOREIGN KEY (from_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (to_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_cash_transfers_from_user_id ON cash_transfers(from_user_id);
+CREATE INDEX idx_cash_transfers_to_user_id ON cash_transfers(to_user_id);
+CREATE INDEX idx_cash_transfers_status ON cash_transfers(status);
+
+-- =========================
+-- TANKER DELIVERIES
+-- =========================
+CREATE TABLE tanker_deliveries (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tank_id INT NOT NULL,
+  liters_delivered DOUBLE NOT NULL,
+  delivery_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  delivered_by INT NOT NULL,
+  aramco_ticket TEXT,
+  notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE,
+  FOREIGN KEY (delivered_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_tanker_deliveries_tank_id ON tanker_deliveries(tank_id);
+CREATE INDEX idx_tanker_deliveries_delivery_date ON tanker_deliveries(delivery_date);
+
+-- =========================
+-- FUEL PRICES
+-- =========================
+CREATE TABLE fuel_prices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  station_id INT NOT NULL,
+  fuel_type ENUM('91_GASOLINE', '95_GASOLINE', 'DIESEL') NOT NULL,
+  price_per_liter DECIMAL(10, 2) NOT NULL,
+  effective_from DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by INT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_station_fuel_effective (station_id, fuel_type, effective_from),
+  FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_fuel_prices_station ON fuel_prices(station_id);
+CREATE INDEX idx_fuel_prices_effective ON fuel_prices(effective_from DESC);
+
+-- =========================
+-- NOZZLE SALES
+-- =========================
+CREATE TABLE nozzle_sales (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  shift_id INT NOT NULL,
+  nozzle_id INT NOT NULL,
+  quantity_liters DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  price_per_liter DECIMAL(10, 2) NOT NULL,
+  total_amount DECIMAL(12, 2) GENERATED ALWAYS AS (quantity_liters * price_per_liter) STORED,
+  card_amount DECIMAL(12, 2) DEFAULT 0,
+  cash_amount DECIMAL(12, 2) DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_shift_nozzle_sales (shift_id, nozzle_id),
+  FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE CASCADE,
+  FOREIGN KEY (nozzle_id) REFERENCES nozzles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_nozzle_sales_shift ON nozzle_sales(shift_id);
+CREATE INDEX idx_nozzle_sales_nozzle ON nozzle_sales(nozzle_id);
+
+-- =========================
+-- VIEW: CURRENT FUEL PRICES
+-- =========================
+CREATE OR REPLACE VIEW current_fuel_prices AS
+SELECT 
+  fp1.id,
+  fp1.station_id,
+  fp1.fuel_type,
+  fp1.price_per_liter,
+  fp1.effective_from,
+  fp1.created_by
+FROM fuel_prices fp1
+INNER JOIN (
+  SELECT station_id, fuel_type, MAX(effective_from) as max_effective
+  FROM fuel_prices
+  GROUP BY station_id, fuel_type
+) fp2 ON fp1.station_id = fp2.station_id 
+  AND fp1.fuel_type = fp2.fuel_type 
+  AND fp1.effective_from = fp2.max_effective;
+
+-- =========================
+-- HELPER QUERIES (for data seeding)
+-- =========================
+
+-- Create tanks for all stations (run after stations are created)
+-- INSERT INTO tanks (station_id, fuel_type, capacity, current_level)
+-- SELECT 
+--   s.id as station_id,
+--   fuel_type,
+--   NULL as capacity,
+--   0 as current_level
+-- FROM stations s
+-- CROSS JOIN (
+--   SELECT '91_GASOLINE' as fuel_type
+--   UNION ALL SELECT '95_GASOLINE'
+--   UNION ALL SELECT 'DIESEL'
+-- ) AS fuel_types
+-- WHERE NOT EXISTS (
+--   SELECT 1 FROM tanks t 
+--   WHERE t.station_id = s.id 
+--   AND t.fuel_type = fuel_types.fuel_type
+-- );
+
+-- Create nozzles for all stations (run after tanks are created)
+-- INSERT INTO nozzles (station_id, name, tank_id, fuel_type, meter_limit)
+-- SELECT 
+--   t.station_id,
+--   CONCAT(s.name, '-', 
+--     CASE 
+--       WHEN t.fuel_type = '91_GASOLINE' AND nozzle_num = 1 THEN '91-1'
+--       WHEN t.fuel_type = '91_GASOLINE' AND nozzle_num = 2 THEN '91-2'
+--       WHEN t.fuel_type = '95_GASOLINE' AND nozzle_num = 1 THEN '95-1'
+--       WHEN t.fuel_type = '95_GASOLINE' AND nozzle_num = 2 THEN '95-2'
+--       WHEN t.fuel_type = 'DIESEL' AND nozzle_num = 1 THEN 'DIESEL-1'
+--       WHEN t.fuel_type = 'DIESEL' AND nozzle_num = 2 THEN 'DIESEL-2'
+--     END
+--   ) as name,
+--   t.id as tank_id,
+--   t.fuel_type,
+--   999999 as meter_limit
+-- FROM tanks t
+-- JOIN stations s ON t.station_id = s.id
+-- CROSS JOIN (
+--   SELECT 1 as nozzle_num
+--   UNION ALL SELECT 2
+-- ) AS nozzles
+-- WHERE NOT EXISTS (
+--   SELECT 1 FROM nozzles n
+--   WHERE n.tank_id = t.id
+--   AND n.name = CONCAT(s.name, '-', 
+--     CASE 
+--       WHEN t.fuel_type = '91_GASOLINE' AND nozzle_num = 1 THEN '91-1'
+--       WHEN t.fuel_type = '91_GASOLINE' AND nozzle_num = 2 THEN '91-2'
+--       WHEN t.fuel_type = '95_GASOLINE' AND nozzle_num = 1 THEN '95-1'
+--       WHEN t.fuel_type = '95_GASOLINE' AND nozzle_num = 2 THEN '95-2'
+--       WHEN t.fuel_type = 'DIESEL' AND nozzle_num = 1 THEN 'DIESEL-1'
+--       WHEN t.fuel_type = 'DIESEL' AND nozzle_num = 2 THEN 'DIESEL-2'
+--     END
+--   )
+-- );
